@@ -1,0 +1,42 @@
+{
+  "name": "stock-market-analyzer",
+  "description": "Multi-agent stock analysis swarm",
+  "topology": "hierarchical",
+  "orchestrator": {
+    "model": "claude-sonnet-4-20250514",
+    "instructions": "You are coordinating a stock analysis. Given a ticker symbol, run the chart-analyst, news-sentiment, and fundamentals agents in parallel. Once all three complete, pass their full outputs to the synthesizer agent to produce the final report."
+  },
+  "agents": [
+    {
+      "id": "chart-analyst",
+      "file": ".claude/agents/chart-analyst.md",
+      "phase": 1
+    },
+    {
+      "id": "news-sentiment",
+      "file": ".claude/agents/news-sentiment.md",
+      "phase": 1
+    },
+    {
+      "id": "fundamentals",
+      "file": ".claude/agents/fundamentals.md",
+      "phase": 1
+    },
+    {
+      "id": "synthesizer",
+      "file": ".claude/agents/synthesizer.md",
+      "phase": 2
+    }
+  ],
+  "handoff": {
+    "phase1_to_phase2": {
+      "contextMode": "full",
+      "trigger": "all_complete"
+    }
+  },
+  "output": {
+    "format": "markdown",
+    "saveToFile": true,
+    "outputDir": "reports"
+  }
+}

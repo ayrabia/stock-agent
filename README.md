@@ -83,14 +83,143 @@ Receives the full outputs of all three Phase 1 agents. Weighs technical, sentime
 ## Usage
 
 ```bash
-# Run an analysis (example: AAPL)
-# Open Claude Code in this directory and prompt:
+# Quant analysis — runs all indicators from real OHLCV data (recommended)
+python src/analyze.py AAPL
+python src/analyze.py AAPL SNPS QCOM NVDA   # multiple tickers
+
+# Swarm analysis — web-search-based narrative report via Claude Code prompt:
 # "Analyze AAPL using the stock-market-analyzer swarm and save the report to the reports folder"
 ```
 
 Reports are saved to `reports/<TICKER>-<DATE>.md`.
 
-> **Note:** The `chart-analyst` and `news-sentiment` agents require `WebSearch` permission to be enabled in Claude Code settings to retrieve live market data. Without it, technical analysis will be unavailable and sentiment/fundamentals will fall back to training knowledge.
+---
+
+## Quant Analyzer (`src/analyze.py`)
+
+A Python script that fetches real OHLCV data via **yfinance** (no API key required) and computes all technical indicators from scratch. Produces a markdown report and prints a terminal summary.
+
+### Indicators Computed from Raw Data
+
+#### RSI — Relative Strength Index (14-day)
+Measures momentum — how fast and how much the price has moved recently.
+
+```
+delta      = daily price changes
+avg_gain   = 14-day EWM of positive deltas
+avg_loss   = 14-day EWM of negative deltas
+RS         = avg_gain / avg_loss
+RSI        = 100 - (100 / (1 + RS))
+```
+
+| RSI Range | Signal |
+|-----------|--------|
+| < 30 | Oversold — sellers exhausted, potential bounce |
+| > 70 | Overbought — buyers exhausted, potential pullback |
+| 30–70 | Neutral |
+
+---
+
+#### MACD — Moving Average Convergence Divergence (12 / 26 / 9)
+Measures trend direction and momentum shifts.
+
+```
+EMA-12      = 12-day exponential moving avg of close
+EMA-26      = 26-day exponential moving avg of close
+MACD line   = EMA-12 − EMA-26
+Signal line = 9-day EMA of MACD line
+Histogram   = MACD line − Signal line
+```
+
+- MACD line **crosses above** signal → bullish momentum
+- MACD line **crosses below** signal → bearish momentum
+- Histogram magnitude shows acceleration
+
+---
+
+#### Bollinger Bands (20-day, 2σ)
+Measures volatility and whether price is stretched relative to recent history.
+
+```
+Middle Band = 20-day SMA
+Upper Band  = SMA + (2 × 20-day std deviation)
+Lower Band  = SMA − (2 × 20-day std deviation)
+%B          = (price − lower) / (upper − lower) × 100
+```
+
+| %B | Signal |
+|----|--------|
+| < 20% | Price near lower band — oversold |
+| > 80% | Price near upper band — overbought |
+| 20–80% | Normal range |
+
+Bands widen during high volatility, narrow during consolidation.
+
+---
+
+#### SMA — Simple Moving Averages (20 / 50 / 200)
+Measures trend direction over different timeframes.
+
+```
+SMA(n) = sum of last n closing prices / n
+```
+
+| SMA | Timeframe |
+|-----|-----------|
+| SMA-20 | Short-term trend |
+| SMA-50 | Medium-term trend |
+| SMA-200 | Long-term trend ("line in the sand") |
+
+Price **above** SMA = bullish. Price **below** = bearish.
+
+---
+
+#### Golden Cross / Death Cross
+Major long-term trend regime signals.
+
+```
+Golden Cross = SMA-50 crosses ABOVE SMA-200 → long-term bullish
+Death Cross  = SMA-50 crosses BELOW SMA-200 → long-term bearish
+```
+
+---
+
+#### ATR — Average True Range (14-day)
+Measures daily volatility in dollar terms — useful for sizing stop-losses.
+
+```
+True Range = max(High − Low, |High − Prev Close|, |Low − Prev Close|)
+ATR        = 14-day EWM average of True Range
+```
+
+A stop-loss at `price − 2×ATR` gives the trade room to breathe without being too loose.
+
+---
+
+#### Signal Aggregation
+Five signals are each scored −1 / 0 / +1 and averaged:
+
+| Signal | Buy (+1) | Sell (−1) |
+|--------|----------|-----------|
+| RSI | < 30 | > 70 |
+| MACD crossover | Line above signal | Line below signal |
+| Price vs SMA-50 | Above | Below |
+| Price vs SMA-200 | Above | Below |
+| MA Crossover | Golden Cross | Death Cross |
+
+Average ≥ 0.5 → **BULLISH** | ≤ −0.5 → **BEARISH** | otherwise **NEUTRAL**
+
+The final verdict layers in analyst consensus and implied upside from the price target.
+
+---
+
+### Dependencies
+
+```bash
+pip install yfinance pandas numpy
+```
+
+No API key required. yfinance pulls directly from Yahoo Finance.
 
 ---
 
@@ -98,6 +227,8 @@ Reports are saved to `reports/<TICKER>-<DATE>.md`.
 
 ```
 stock-agent/
+├── src/
+│   └── analyze.py              # Quant analyzer — yfinance + computed indicators
 ├── .claude/
 │   ├── swarm.json              # Swarm topology and agent configuration
 │   └── agents/
@@ -114,6 +245,7 @@ stock-agent/
 
 ## Limitations
 
-- Agent data is bounded by Claude's knowledge cutoff unless WebSearch is enabled
-- Technical analysis requires live market data access; without it, chart signals are unavailable
+- `src/analyze.py` uses Yahoo Finance data — may have short delays vs. real-time feeds
+- Swarm agents rely on WebSearch for live narrative data; without it they fall back to training knowledge
+- Signal aggregation is rules-based, not a backtested strategy — treat as one input among many
 - Reports are informational only and not financial advice
